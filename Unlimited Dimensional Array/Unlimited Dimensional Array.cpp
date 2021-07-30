@@ -2,71 +2,67 @@
 //
 
 #include <iostream>
-#include <variant>
-#include <memory>
-#include <array>
-#include <stdexcept>
-#include <type_traits>
-#include <algorithm>
-#include <string>
+#include <utility>
 
-#define MAX_STACK_STORAGE_SIZE 1024U
-#define MAX_HEAP_STORAGE_SIZE 4096U
+#define MAX_STACK_SIZE 256U
+#define MAX_HEAP_SIZE 4096U
 
-#if MAX_STACK_STORAGE_SIZE >= MAX_HEAP_STORAGE_SIZE
-#error MAX_HEAP_STORAGE_SIZE must be greater than MAX_STORAGE_SIZE
-#endif // MAX_STACK_STORAGE_SIZE >= MAX_HEAP_STORAGE_SIZE
+template<class T, size_t... Ds>
+class array;
 
-template<size_t N1, size_t... Ns>
-struct multiply_accumulate {
-    static constexpr size_t value = N1 * multiply_accumulate<Ns...>::value;
-};
-
-template<size_t N>
-struct multiply_accumulate<N> {
-    static constexpr size_t value = N;
-};
-
-class potential_out_of_memory_error : public std::runtime_error {
-public:
-    potential_out_of_memory_error(size_t requested) : 
-        std::runtime_error(
-            "Storage size requested breaches both MAX_STACK_STORAGE_SIZE and "
-            "MAX_HEAP_STORAGE_SIZE thresholds. Increase these thresholds to "
-            "prevent this error. Bytes requested: " + std::to_string(requested)
-        ) {}
-};
-
-template<class T, size_t... DIMENSION_SIZES>
-class unlimited_dimensional_array {
-public:
-    static constexpr size_t storage_size = multiply_accumulate<DIMENSION_SIZES...>::value * sizeof(T);
+template<class T>
+class array<T> {
 private:
-    std::variant<
-        std::array<T, storage_size>,
-        std::shared_ptr<T>
-    > storage;
+    T value;
 public:
-    constexpr unlimited_dimensional_array(const T &init = T()) {
-        if constexpr (storage_size < MAX_STACK_STORAGE_SIZE) {
-            std::array<T, storage_size> &ref_arr =
-                std::get<0>(this->storage);
+    array<T> &operator=(const T &value) {
+        this->value = value;
 
-            ref_arr.fill(init);
-        } else if (storage_size < MAX_HEAP_STORAGE_SIZE) {
-            std::shared_ptr<T> &sp_t = std::get<1>(this->storage);
+        return *this;
+    }
 
-            sp_t = std::make_shared<T>(new T[storage_size]);
-        } else {
-            throw potential_out_of_memory_error(storage_size);
-        }
+    array<T> &operator=(T &&value) {
+        this->value = std::move(value);
+
+        return *this;
+    }
+
+    operator T &() {
+        return this->value;
     }
 };
 
-constexpr size_t test = multiply_accumulate<3, 3, 3>::value;
+template<class T, size_t D>
+class array<T, D> {
+private:
+    T data[D];
+public:
+    T &operator[](const size_t n) {
+        return this->data[n];
+    }
+};
+
+template<class T, size_t D1, size_t... Ds>
+class array<T, D1, Ds...> {
+private:
+    array<T, Ds...> data[D1];
+public:
+    static constexpr size_t total_storage_size = sizeof(T) * D1 * (Ds * ...);
+
+    static_assert(
+        total_storage_size < MAX_STACK_SIZE, 
+        "Array exceeded MAX_STACK_SIZE; reduce size of array or increase "
+        "MAX_STACK_SIZE threshold."
+    );
+
+    array<T, Ds...> operator[](const size_t n) const {
+        return this->data[n];
+    }
+};
+
+constexpr size_t storage_size_test_1 = array<int, 3, 3, 3>::total_storage_size;
 
 int main(int argc, const char *argv[]) {
-    unlimited_dimensional_array<int, 2, 2> udai2x2;
 
     return 0;
 }
