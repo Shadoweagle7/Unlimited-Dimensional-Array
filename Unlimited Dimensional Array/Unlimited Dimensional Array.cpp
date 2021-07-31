@@ -3,66 +3,145 @@
 
 #include <iostream>
 #include <utility>
+#include <concepts>
+#include <initializer_list>
+#include <iterator>
+#include <cstdint>
+#include <memory>
 
-#define MAX_STACK_SIZE 256U
-#define MAX_HEAP_SIZE 4096U
+#define MAX_INFINITE_ARRAY_STACK_SIZE 256U
+#define MAX_INFINITE_ARRAY_HEAP_SIZE 4096U
 
-template<class T, size_t... Ds>
+template<std::integral I>
+constexpr I max(I i1, I i2) {
+    return i1 > i2 ? i1 : i2;
+}
+
+template<std::integral I>
+constexpr I min(I i1, I i2) {
+    return i1 < i2 ? i1 : i2;
+}
+
+template<bool STACK_ALLOCATED, class T, size_t... Ds>
 class array;
 
-template<class T>
-class array<T> {
-private:
-    T value;
-public:
-    array<T> &operator=(const T &value) {
-        this->value = value;
-
-        return *this;
-    }
-
-    array<T> &operator=(T &&value) {
-        this->value = std::move(value);
-
-        return *this;
-    }
-
-    operator T &() {
-        return this->value;
-    }
-};
-
 template<class T, size_t D>
-class array<T, D> {
+class array<true, T, D> {
 private:
     T data[D];
 public:
+    static constexpr size_t total_storage_size = sizeof(T) * D;
+
+    static_assert(D != 0, "Cannot have a zero dimensional array on the stack");
+
+    static_assert(
+        total_storage_size < MAX_INFINITE_ARRAY_STACK_SIZE,
+        "Array exceeded MAX_INFINITE_ARRAY_STACK_SIZE; reduce size of array or increase "
+        "MAX_INFINITE_ARRAY_STACK_SIZE threshold."
+    );
+
+    array(std::initializer_list<T> i_list) {
+        for (size_t i = 0; i < min(i_list.size(), D); i++) {
+            this->data[i] = *(i_list.begin());
+        }
+    }
+
+    T &operator[](const size_t n) {
+        return this->data[n];
+    }
+};
+
+template<class T, class U, size_t D1, size_t... Ds>
+concept stack_array = std::same_as<T, array<true, U, D1, Ds...>>;
+
+template<class T, size_t D1, size_t... Ds>
+class array<true, T, D1, Ds...> {
+private:
+    array<true, T, Ds...> data[D1];
+public:
+    static constexpr size_t total_storage_size = sizeof(T) * D1 * (Ds * ...);
+
+    static_assert(D1 != 0, "Cannot have a zero dimensional array on the stack");
+
+    static_assert(
+        total_storage_size < MAX_INFINITE_ARRAY_STACK_SIZE, 
+        "Array exceeded MAX_INFINITE_ARRAY_STACK_SIZE; reduce size of array or increase "
+        "MAX_INFINITE_ARRAY_STACK_SIZE threshold."
+    );
+
+    template<stack_array<T, Ds...>... SA>
+    array(SA... sa) : data{sa...} {}
+
+    array<true, T, Ds...> &operator[](const size_t n) {
+        return this->data[n];
+    }
+};
+
+constexpr size_t storage_size_test_1 = array<true, int, 3, 3, 3>::total_storage_size;
+constexpr size_t storage_size_test_2 = array<true, int, 3>::total_storage_size;
+
+template<class T, size_t D>
+class array<false, T, D> {
+private:
+    std::shared_ptr<T> data;
+public:
+    static constexpr size_t total_storage_size = sizeof(T) * D;
+
+    static_assert(
+        total_storage_size < MAX_INFINITE_ARRAY_HEAP_SIZE,
+        "Array exceeded MAX_INFINITE_ARRAY_HEAP_SIZE; reduce size of array or increase "
+        "MAX_INFINITE_ARRAY_HEAP_SIZE threshold."
+    );
+
+    operator T &() {
+        return *this->data;
+    }
+
     T &operator[](const size_t n) {
         return this->data[n];
     }
 };
 
 template<class T, size_t D1, size_t... Ds>
-class array<T, D1, Ds...> {
+class array<false, T, D1, Ds...> {
 private:
-    array<T, Ds...> data[D1];
+    std::shared_ptr<array<false, T, Ds...>> data;
 public:
     static constexpr size_t total_storage_size = sizeof(T) * D1 * (Ds * ...);
 
     static_assert(
-        total_storage_size < MAX_STACK_SIZE, 
-        "Array exceeded MAX_STACK_SIZE; reduce size of array or increase "
-        "MAX_STACK_SIZE threshold."
+        total_storage_size < MAX_INFINITE_ARRAY_HEAP_SIZE,
+        "Array exceeded MAX_INFINITE_ARRAY_HEAP_SIZE; reduce size of array or increase "
+        "MAX_INFINITE_ARRAY_HEAP_SIZE threshold."
     );
 
-    array<T, Ds...> operator[](const size_t n) const {
+    array<false, T, Ds...> &operator[](const size_t n) {
         return this->data[n];
     }
 };
 
-constexpr size_t storage_size_test_1 = array<int, 3, 3, 3>::total_storage_size;
-
 int main(int argc, const char *argv[]) {
+    array<true, int, 1, 2, 3> stack_1;
+
+    array<true, int, 1> stack_2 = { 1, 2, 3, 4, 5 };
+
+    std::cout << " -- Stack -- \n";
+
+    for (size_t i = 0; i < 1; i++) {
+        for (size_t j = 0; j < 2; j++) {
+            for (size_t k = 0; k < 3; k++) {
+                std::cout << stack_1[i][j][k] << "\n";
+            }
+        }
+    }
+
+    std::cout << " -- Heap -- \n";
+
+    for (size_t i = 0; i < 5; i++) {
+        std::cout << stack_2[i] << "\n";
+    }
+
+    array<false, int, 1, 2, 3> heap_1;
 
     return 0;
 }
